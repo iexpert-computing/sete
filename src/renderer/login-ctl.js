@@ -263,6 +263,10 @@ $(() => {
                 usuario: email,
                 senha: md5password
             }).then((seteUser) => {
+                if (window.mobiLocalClearMode) {
+                    window.mobiLocalClearMode();
+                }
+
                 // Set local config 
                 if (lembrarlogin) {
                     userconfig.set("LEMBRAR", true);
@@ -324,6 +328,12 @@ $(() => {
                 }
             })
 
+        }
+    });
+
+    $("#mobi-local-submit").on("click", () => {
+        if (window.mobiLocalPromptLogin) {
+            window.mobiLocalPromptLogin();
         }
     });
 

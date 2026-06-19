@@ -53,18 +53,92 @@ if (userconfig.get("NOME")) {
     $("#userName").html(userconfig.get("NOME").split(" ")[0]);
 }
 
-// Verifica se usuário está logado
-restImpl.restAPI.get(BASE_URL + "/authenticator/sete")
-.then(() => preencheDashboardAlunosEscolas())
-.then(() => preencheDashboardVeiculos())
-.then(() => preencheDashboardRotas())
-.then(() => preencheMapa())
-.then(() => firstAcess ? mostraSeTemUpdate(modal = false) : null)
-.then(() => {
+var DASHBOARD_STAGE_TIMEOUT_MS = 30000;
+var DASHBOARD_UPDATE_TIMEOUT_MS = 10000;
+
+function dashboardLocalMode() {
+    return Boolean(window.isMobiLocalMode && window.isMobiLocalMode());
+}
+
+function dashboardLog(stageName, message, payload) {
+    let prefix = `[dashboard][${stageName}] ${message}`;
+    if (payload !== undefined) {
+        console.log(prefix, payload);
+    } else {
+        console.log(prefix);
+    }
+}
+
+function withDashboardTimeout(stageName, task, timeoutMs = DASHBOARD_STAGE_TIMEOUT_MS) {
+    return new Promise((resolve, reject) => {
+        let finished = false;
+        let timer = setTimeout(() => {
+            if (finished) return;
+            let err = new Error(`Tempo limite ao carregar a etapa "${stageName}".`);
+            err.dashboardStage = stageName;
+            reject(err);
+        }, timeoutMs);
+
+        Promise.resolve()
+            .then(task)
+            .then((result) => {
+                finished = true;
+                clearTimeout(timer);
+                resolve(result);
+            })
+            .catch((err) => {
+                finished = true;
+                clearTimeout(timer);
+                reject(err);
+            });
+    });
+}
+
+async function runDashboardStage(stageName, task, timeoutMs = DASHBOARD_STAGE_TIMEOUT_MS) {
+    let startedAt = window.performance.now();
+    dashboardLog(stageName, "inicio");
+    try {
+        let result = await withDashboardTimeout(stageName, task, timeoutMs);
+        let elapsed = Math.round(window.performance.now() - startedAt);
+        dashboardLog(stageName, `fim em ${elapsed} ms`);
+        return result;
+    } catch (err) {
+        err.dashboardStage = err.dashboardStage || stageName;
+        console.error(`[dashboard][${stageName}] falhou`, err);
+        throw err;
+    }
+}
+
+async function preparaAcessoDashboard() {
+    if (dashboardLocalMode()) {
+        if (window.mobiLocalReady) {
+            await window.mobiLocalReady;
+        } else if (window.mobiLocalEnsureReady) {
+            await window.mobiLocalEnsureReady();
+        } else if (window.mobiLocalEnsureSchema) {
+            if (window.installMobiLocalRestAdapter) window.installMobiLocalRestAdapter();
+            await window.mobiLocalEnsureSchema();
+            if (window.installMobiLocalRestAdapter) window.installMobiLocalRestAdapter();
+        } else {
+            throw new Error("Adaptador local/MOBI nao foi carregado.");
+        }
+        return;
+    }
+
+    await restImpl.restAPI.get(BASE_URL + "/authenticator/sete");
+}
+
+function fechaLoadingDashboard() {
+    if (typeof Swal2 !== "undefined" && Swal2.close) {
+        Swal2.close();
+    }
+}
+
+function mostraConteudoDashboard() {
     $(".preload").fadeOut(200, function () {
         $(".content").fadeIn(200);
     });
-    Swal2.close()
+    fechaLoadingDashboard();
 
     setTimeout(function () {
         if (mapa != null) { mapa["map"].updateSize(); }
@@ -74,13 +148,55 @@ restImpl.restAPI.get(BASE_URL + "/authenticator/sete")
     firstAcess = false;
 
     return firstAcess;
-})
-.catch(() => {
-    errorFn("Acesso inválido")
-    .then(() => {
-        document.location.href = "./login-view.html";
-    })
-})
+}
+
+function mensagemErroDashboard(err) {
+    let stage = err && err.dashboardStage ? `Etapa: ${err.dashboardStage}. ` : "";
+    let detail = err && err.message ? err.message : "Erro nao identificado.";
+    return `${stage}${detail}`;
+}
+
+function trataErroDashboard(err) {
+    let localMode = dashboardLocalMode();
+    fechaLoadingDashboard();
+    $(".preload").hide();
+
+    if (localMode) {
+        $(".content").fadeIn(200);
+        return errorFn(
+            "Falha ao carregar os dados locais/MOBI.",
+            mensagemErroDashboard(err),
+            "Falha no modo local/MOBI"
+        );
+    }
+
+    return errorFn("Acesso inválido", mensagemErroDashboard(err), "Acesso inválido")
+        .then(() => {
+            document.location.href = "./login-view.html";
+        });
+}
+
+async function inicializaDashboard() {
+    try {
+        await runDashboardStage(dashboardLocalMode() ? "modo local/MOBI" : "autenticacao", preparaAcessoDashboard);
+        await runDashboardStage("alunos/escolas", preencheDashboardAlunosEscolas);
+        await runDashboardStage("veiculos", preencheDashboardVeiculos);
+        await runDashboardStage("rotas", preencheDashboardRotas);
+        await runDashboardStage("mapa", preencheMapa);
+
+        if (firstAcess && !dashboardLocalMode()) {
+            await runDashboardStage("verificacao de update", () => mostraSeTemUpdate(false), DASHBOARD_UPDATE_TIMEOUT_MS);
+        } else if (dashboardLocalMode()) {
+            dashboardLog("verificacao de update", "ignorada no modo local/MOBI");
+        }
+
+        mostraConteudoDashboard();
+    } catch (err) {
+        trataErroDashboard(err);
+    }
+}
+
+inicializaDashboard();
 
 // Funções que Preenchem o Dashboard
 async function preencheDashboardAlunosEscolas() {
@@ -88,6 +204,7 @@ async function preencheDashboardAlunosEscolas() {
     let escolas = [];
     let alunosRAW = [];
     let escolasRAW = [];
+    let rotasRAW = [];
     let escolaSet = new Set();
     try {
         alunosRAW = await restImpl.dbGETColecao(DB_TABLE_ALUNO);
@@ -166,17 +283,26 @@ async function preencheDashboardRotas() {
         let promiseArray = [];
 
         for (let rota of rotas) {
-            let rotaID = rota["id_rota"];
+            let rotaID = rota["id_rota"] || rota["ID_ROTA"] || rota["id"] || rota["ID"];
+            if (rotaID === undefined || rotaID === null || rotaID === "") {
+                console.warn("[dashboard][rotas] rota sem identificador ignorada", rota);
+                continue;
+            }
             let rotaDetalheRaw = await restImpl.dbGETEntidade(DB_TABLE_ROTA, `/${rotaID}`);
+            if (!rotaDetalheRaw || Object.keys(rotaDetalheRaw).length === 0) {
+                rotaDetalheRaw = rota;
+            }
 
             let rotaJSON = parseRotaDBREST(rotaDetalheRaw);
+            rotaJSON["NOME"] = rotaJSON["NOME"] || rotaJSON["nome"] || `Rota ${rotaID}`;
             rotaJSON["NUM_ALUNOS_ROTA"] = 0;
             rotaJSON["SHAPE"] = null;
 
             promiseArray.push(pegarShapeRota(rotaID))
             hashMapRotas.set(rotaID, rotaJSON);
 
-            let rotakm = strToNumber(rotaJSON.km);
+            let rotakm = strToNumber(rotaJSON.km || rotaJSON["KM"] || 0);
+            if (Number.isNaN(rotakm)) rotakm = 0;
             totalKM = totalKM + rotakm;
         }
 
@@ -267,6 +393,30 @@ function preencheRelacoes() {
     return Promise.all(dashPromises)
 }
 
+function nomeSeguroRota(rota, rotaKey) {
+    let nome = rota ? (rota["NOME"] || rota["nome"]) : "";
+    nome = String(nome || "").trim();
+    if (nome !== "") return nome;
+    if (rotaKey !== undefined && rotaKey !== null && rotaKey !== "") return `Rota ${rotaKey}`;
+    return "Rota sem nome";
+}
+
+function compararRotasDashboard(a, b) {
+    let nomeA = nomeSeguroRota(hashMapRotas.get(a), a).toLowerCase();
+    let nomeB = nomeSeguroRota(hashMapRotas.get(b), b).toLowerCase();
+    let parA = nomeA.split(" ");
+    let parB = nomeB.split(" ");
+
+    if (parA.length > 0 && parB.length > 0) {
+        parA = parA[0];
+        parB = parB[0];
+        if (isNumeric(parA) && isNumeric(parB)) {
+            return parA - parB;
+        }
+    }
+    return nomeA.localeCompare(nomeB);
+}
+
 // Preenche Mapa
 function preencheMapa() {
     let categoriasAluno = ["Infantil", "Fundamental", "Médio", "Superior", "Outro"];
@@ -309,25 +459,12 @@ function preencheMapa() {
     let grupoLayersEscolas = [];
     categoriasEscola.reverse().forEach(cat => grupoLayersEscolas.push(lyrEscola[cat].layer));
 
-    [...hashMapRotas.keys()].sort((a, b) => {
-        let nomeA = hashMapRotas.get(a)["NOME"]?.toLowerCase().trim();
-        let nomeB = hashMapRotas.get(b)["NOME"]?.toLowerCase().trim();
-        let parA = nomeA.split(" ");
-        let parB = nomeB.split(" ");
-
-        if (parA.length > 0 && parB.length > 0) {
-            parA = parA[0];
-            parB = parB[0];
-            if (isNumeric(parA) && isNumeric(parB)) {
-                return parA - parB;
-            }
-        }
-        return nomeA.localeCompare(nomeB);
-    }).reverse().forEach(rotaKey => {
+    [...hashMapRotas.keys()].sort(compararRotasDashboard).reverse().forEach(rotaKey => {
         let rota = hashMapRotas.get(rotaKey);
+        if (!rota) return;
         if (rota["SHAPE"] != "" && rota["SHAPE"] != null && rota["SHAPE"] != undefined) {
             try {
-                let rotaNome = rota["NOME"];
+                let rotaNome = nomeSeguroRota(rota, rotaKey);
                 let rotaCor = proximaCor();
                 let rotaGeoJSON = (new ol.format.GeoJSON()).readFeatures(rota["SHAPE"]);
 
@@ -347,7 +484,7 @@ function preencheMapa() {
                 }
 
                 rotaGeoJSON.forEach(f => {
-                    f.set("NOME", rota["NOME"]);
+                    f.set("NOME", rotaNome);
                     f.set("KM", rota["KM"]);
                     f.set("TEMPO", rota["TEMPO"] != "" ? rota["TEMPO"] : "Não");
                     f.set("NUM_ALUNOS_ROTA", rota["NUM_ALUNOS_ROTA"]);
@@ -388,24 +525,12 @@ function preencheMapa() {
     // })
 
     let grupoLayersRotas = [];
-    [...hashMapRotas.keys()].sort((a, b) => {
-        let nomeA = hashMapRotas.get(a)["NOME"]?.toLowerCase().trim();
-        let nomeB = hashMapRotas.get(b)["NOME"]?.toLowerCase().trim();
-        let parA = nomeA.split(" ");
-        let parB = nomeB.split(" ");
-
-        if (parA.length > 0 && parB.length > 0) {
-            parA = parA[0];
-            parB = parB[0];
-            if (isNumeric(parA) && isNumeric(parB)) {
-                return parA - parB;
-            }
-        }
-        return nomeA.localeCompare(nomeB);
-    }).reverse().forEach(rotaKey => {
+    [...hashMapRotas.keys()].sort(compararRotasDashboard).reverse().forEach(rotaKey => {
         let rota = hashMapRotas.get(rotaKey);
-        if (rota["NOME"] in lyrRotas) {
-            grupoLayersRotas.push(lyrRotas[rota["NOME"]].layer)
+        if (!rota) return;
+        let rotaNome = nomeSeguroRota(rota, rotaKey);
+        if (rotaNome in lyrRotas) {
+            grupoLayersRotas.push(lyrRotas[rotaNome].layer)
         }
     });
 
@@ -785,6 +910,3 @@ function ouveUpdates() {
             });
     }
 }
-
-
-

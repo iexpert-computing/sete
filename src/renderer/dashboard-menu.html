@@ -59,6 +59,24 @@
             </a>
         </li> -->
         <li class="nav-item">
+            <a class="nav-link" data-toggle="collapse" href="#mobiMenu">
+                <i class="fa fa-file-zip-o menu-icon" aria-hidden="true"></i>
+                <p>
+                    MOBI
+                    <b class="caret"></b>
+                </p>
+            </a>
+            <div class="collapse " id="mobiMenu">
+                <ul class="nav">
+                    <li class="nav-item ">
+                        <a name="mobi/mobi-importar-view" class="link-menu nav-link mobi-local-import" href="#">
+                            <span class="sidebar-normal">Importar do MOBI</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </li>
+        <li class="nav-item">
             <a class="nav-link" data-toggle="collapse" href="#censoMenu">
                 <img src="./img/icones/censo_white.png" class="menu-icon">
                 <p>
@@ -404,10 +422,12 @@
     var linksHabilitado = true;
 
     // Funções para desabilitar/habilitar links quando usuário estiver offline
+    var seletorLinksEscrita = "a[name*='cadastrar'], a[name*='desenhar'], a[name*='importar']:not(.mobi-local-import), a[name*='sugestao'], a[name*='malha'], a[name*='parametros']";
+
     var desabilitaLinksMenu = (msg = 'Esta função só está habilitada se você estiver conectado à Internet.') => {
-        $("li.nav-item").has("a[name*='cadastrar'], a[name*='desenhar'], a[name*='importar']").addClass("disabled");
-        $("a[name*='cadastrar'], a[name*='importar']").unbind("click");
-        $("a[name*='cadastrar'], a[name*='importar']").bind("click", () => {
+        $("li.nav-item").has(seletorLinksEscrita).addClass("disabled");
+        $(seletorLinksEscrita).unbind("click");
+        $(seletorLinksEscrita).bind("click", () => {
             debugger
             Swal2.fire({
                 icon: 'error',
@@ -420,8 +440,8 @@
     }
 
     var habilitaLinksMenu = () => {
-        $("li.nav-item").has("a[name*='cadastrar'], a[name*='importar']").removeClass("disabled");
-        $("li.nav-item a[name*='cadastrar'], li.nav-item a[name*='importar']").unbind("click");
+        $("li.nav-item").has(seletorLinksEscrita).removeClass("disabled");
+        $(seletorLinksEscrita).unbind("click");
         $(".link-menu").unbind("click");
         $(".link-menu").on('click', function () {
             $(".activeLink").removeClass("activeLink");
@@ -436,7 +456,12 @@
     }
 
     var funcMonitorRede = window.setInterval(function () {
-        if (userconfig?.get("TIPO_PERMISSAO") == "leitor") {
+        if (window.isMobiLocalMode && window.isMobiLocalMode()) {
+            if (linksHabilitado) {
+                desabilitaLinksMenu(window.mobiLocalReadonlyMessage || "Modo local/MOBI somente consulta.");
+            }
+            $("td a[class*='Student'], td a[class*='Edit'], td a[class*='Remove']").remove();
+        } else if (userconfig?.get("TIPO_PERMISSAO") == "leitor") {
             if (linksHabilitado) {
                 desabilitaLinksMenu();
             }
@@ -493,7 +518,9 @@
 
         // Habilita ou desabilita menus com base no perfil do usuário
         habilitaLinksMenu();
-        if (userconfig.get("TIPO_PERMISSAO") == "leitor") {
+        if (window.isMobiLocalMode && window.isMobiLocalMode()) {
+            desabilitaLinksMenu(window.mobiLocalReadonlyMessage || "Modo local/MOBI somente consulta.");
+        } else if (userconfig.get("TIPO_PERMISSAO") == "leitor") {
             desabilitaLinksMenu("Você não possui permissão para cadastrar ou alterar os dados deste município");
         }
     });

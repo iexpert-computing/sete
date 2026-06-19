@@ -6,6 +6,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "electron-forge start",
+    "start:wsl": "env -u ELECTRON_RUN_AS_NODE PATH=$(dirname $(command -v node)):/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LIBGL_ALWAYS_SOFTWARE=1 ELECTRON_DISABLE_GPU=1 ELECTRON_ENABLE_LOGGING=1 node_modules/electron/dist/electron --disable-gpu --disable-gpu-compositing --disable-software-rasterizer --in-process-gpu .",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",

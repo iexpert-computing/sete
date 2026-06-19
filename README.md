@@ -23,35 +23,85 @@ O SETE é construído em cima do *framework*  [Electron](https://github.com/elec
 
 O SETE utiliza bibliotecas nativas, a saber o SQLite, para possibilitar o uso e armazenamento de informações de forma *offline*. 
 
-Considerando estes fatores, para construir o **SETE** assume-se as seguintes dependências básicas:
-* Node.js v12 LTS (*e.g.*, Node.js v12.18.3)
-* Yarn v1.22. (utilizado pelo electron para empacotar os binários)
-* Python 2.7 (muitos módulos nativos ainda usam o Python 2)
-* fakeroot, dpkg e rpm para compilar pacotes para GNU/Linux
-* [windows-build-tools](https://github.com/felixrieseberg/windows-build-tools) (para compilação dos módulos no Windows)
-* [Wix Toolset](https://wixtoolset.org) (para gerar binários .msi e .exe para o Windows)
+O projeto utiliza uma pilha legada. Para evitar incompatibilidades com as dependências nativas, especialmente `sqlite3` e `spatialite`, recomenda-se usar as versões abaixo ao executar o projeto localmente:
 
-Para compilar o código execute os seguintes passos.
+* Node.js v12.18.3
+* npm 6.x (instalado junto com o Node.js v12)
+* Yarn v1.22.x
+* Electron v8.5.2
+* Python 2.7 para recompilar módulos nativos antigos
+* `build-essential`, `make` e `g++` no GNU/Linux
+* `fakeroot`, `dpkg` e `rpm` apenas para gerar pacotes GNU/Linux
+* [windows-build-tools](https://github.com/felixrieseberg/windows-build-tools) para compilação dos módulos no Windows
+* [Wix Toolset](https://wixtoolset.org) para gerar binários `.msi` e `.exe` no Windows
 
-### 1: Instalação das dependências básicas
-Instale o NodeJS v12. Você pode utilizar os binários disponbilizados no site [nodejs.org](nodejs.org) ou utilizar uma ferramenta de versionamento para instalação (_e.g._, [Node Version Manager - NVM](https://github.com/nvm-sh/nvm)).
+### 1: Instalação das dependências básicas com NVM
 
-Semelhantemente, instale o gerenciador de pacotes Yarn v1.22. Você pode utilizar os binários disponiblizados no site [https://yarnpkg.com/](https://yarnpkg.com/). O yarn é utilizado pelo electron-forge para gerar os binários.
+Instale o [Node Version Manager - NVM](https://github.com/nvm-sh/nvm) e use a versão definida em `.nvmrc`:
 
-Caso queira compilar para GNU/Linux, instale os pacotes `fakeroot`, `dpkg` e `rpm`. 
-Por exemplo, no Ubuntu 18.04, você deve executar o seguinte comando:
+```sh
+nvm install
+nvm use
+node -v
+npm -v
+```
+
+O `node -v` deve retornar `v12.18.3`. Instale também o Yarn 1.x:
+
+```sh
+npm install --global yarn@1.22.22
+yarn -v
+```
+
+No GNU/Linux, instale as ferramentas de compilação:
+
+```sh
+sudo apt-get install build-essential make g++
+```
+
+Caso queira gerar pacotes GNU/Linux, instale também:
+
 ```sh
 sudo apt-get install fakeroot dpkg rpm
 ```
 
-Caso queira compilar para o Windows, instale o Wix Toolset e coloque o diretório `bin` do mesmo na variável PATH. Por exemplo, adicionando `C:\Program Files (x86)\WiX Toolset v3.11\bin` a variável de ambiente PATH.
+#### Ubuntu 24.04 e WSL
 
-No caso da plataforma Windows ainda é necessário instalar o pacote global [windows-build-tools](https://github.com/felixrieseberg/windows-build-tools) para compilação dos módulos nativos. Como administrador instale este pacote executando o seguinte comando:
+O Ubuntu 24.04 não fornece `python2` nos repositórios padrão. Como o `sqlite3@5.0.0` ainda usa uma versão antiga do `node-gyp`, configure um Python 2.7 disponível na máquina antes de recompilar a dependência nativa. Uma opção é instalar o Python 2.7.18 via `pyenv` ou usar outro pacote compatível:
+
+```sh
+sudo apt-get install build-essential curl git libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev libffi-dev liblzma-dev tk-dev xz-utils
+```
+
+Sem as bibliotecas de desenvolvimento acima, o `pyenv` pode falhar com mensagens como `The Python zlib extension was not compiled` ou `The Python readline extension was not compiled`.
+
+```sh
+npm config set python /caminho/para/python2
+```
+
+Confira a configuração:
+
+```sh
+npm config get python
+```
+
+Em WSL, o Electron também precisa de suporte gráfico. No Windows 11 com WSLg isso normalmente já funciona. Em outros ambientes, erros como `Missing X server` ou `cannot open display` indicam problema de display/GUI, não necessariamente problema nas dependências do SETE.
+
+#### Windows
+
+No Windows, instale o Wix Toolset e coloque o diretório `bin` na variável `PATH`. Por exemplo:
+
+```txt
+C:\Program Files (x86)\WiX Toolset v3.11\bin
+```
+
+Também é necessário instalar o pacote global [windows-build-tools](https://github.com/felixrieseberg/windows-build-tools) como administrador:
+
 ```sh
 npm install --global windows-build-tools
 ```
 
-Por fim, o Windows ainda requer que o `npm` especifique a versão do compilador do Visual Studio, no caso 2017, e o caminho do binário do Python (instalado pelo `windows-build-tools`). Por exemplo, os comando abaixos especificam a versão 2017 e um caminho do Python (modifique para ser condizente com sua máquina). 
+Depois, configure o compilador do Visual Studio e o Python 2.7:
 
 ```sh
 npm config set msvs_version "2017"
@@ -62,32 +112,82 @@ npm config set python "C:\\Python27-x64\\pythonw.exe"
 
 ```sh
 git clone https://github.com/marcosroriz/sete/
+cd sete
+nvm use
 ```
 
-Depois instale as dependência:
+### 3: Instalação das dependências
+
+Instale as dependências do projeto:
 
 ```sh
 npm install
 ```
 
-Por fim, recompile a dependência nativa.
+Por fim, recompile o `sqlite3` para o Electron 8.5.2:
+
 ```sh
-npm install sqlite3 --build-from-source --runtime=electron --target=8.5.2 --dist-url=https://electronjs.org/headers
+npm rebuild sqlite3 --build-from-source --runtime=electron --target=8.5.2 --dist-url=https://electronjs.org/headers
 ```
 
-### 3: Executando o projeto
+### 4: Executando o projeto
 
 Para executar o projeto basta utilizar o seguinte comando:
+
 ```sh
 npm run start
 ```
 
-### 4: Geração de Binários
+No WSL, caso o Electron 8 falhe com erro de compositor gráfico/GPU, use o script específico para esse ambiente:
+
+```sh
+npm run start:wsl
+```
+
+### 5: Geração de Binários
 
 A geração de binários é feita utilizando o utilitário `electron-forge`. Especificamente, para gerar os binários, que ficarão na pasta `out`, execute o seguinte comando:
 
 ```sh
 npm run make
+```
+
+### Solução de problemas
+
+#### Erros envolvendo `sqlite3`, `node-gyp` ou Python
+
+Verifique se o Node.js ativo é o Node 12.18.3:
+
+```sh
+node -v
+```
+
+Confirme também se o npm está apontando para um Python 2.7 válido:
+
+```sh
+npm config get python
+```
+
+Depois rode novamente:
+
+```sh
+npm rebuild sqlite3 --build-from-source --runtime=electron --target=8.5.2 --dist-url=https://electronjs.org/headers
+```
+
+Caso apareça `ValueError: invalid mode: 'rU'`, o `node-gyp` antigo está usando Python 3.11 ou superior. Configure o npm para usar Python 2.7 com suporte a `zlib`/`gzip`, ou use uma versão de Python 3 anterior a 3.11 para essa etapa de rebuild.
+
+#### `npm install` altera o `package-lock.json`
+
+Este repositório possui um `package-lock.json` antigo. Ao preparar mudanças para um Pull Request, confira o diff antes de commitar e evite incluir alterações no lockfile se elas não forem necessárias para a correção.
+
+#### O Electron não abre no WSL
+
+Se a instalação terminar sem erros, mas `npm run start` falhar com mensagens de display, valide se o WSL possui suporte gráfico. No Windows 11, use WSLg atualizado. Em ambientes sem WSLg, configure um servidor X ou rode o projeto em um ambiente Linux com sessão gráfica.
+
+Em ambientes WSL com Electron 8, também pode ocorrer a falha `The display compositor is frequently crashing`. Nesse caso, rode:
+
+```sh
+npm run start:wsl
 ```
 
 ## Licença de Uso

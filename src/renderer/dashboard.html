@@ -114,6 +114,7 @@
 <!-- Scripts para lidar com banco de dados -->
 <script src="js/db_rest.js"></script>
 <script src="js/db.js"></script>
+<script src="js/mobi_local.js"></script>
 
 <!-- Scripts para lidar com dados geográficos -->
 <script src="js/geo.js"></script>
@@ -174,7 +175,20 @@
 <script src="js/plugins/chartist-bar-labels.js"></script>
 
 <!-- Google/Apex/Charts -->
-<script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+<script>
+    if (window.isMobiLocalMode && window.isMobiLocalMode()) {
+        window.ApexCharts = window.ApexCharts || function () {
+            return {
+                render: function () { return Promise.resolve(); },
+                updateOptions: function () { return Promise.resolve(); },
+                updateSeries: function () { return Promise.resolve(); },
+                destroy: function () {}
+            };
+        };
+    } else {
+        document.write('<script src="https://cdn.jsdelivr.net/npm/apexcharts"><\/script>');
+    }
+</script>
 
 <!--  Notifications Plugin    -->
 <script src="js/plugins/bootstrap-notify.js"></script>
@@ -200,20 +214,25 @@
 
 <!-- MathJax -->
 <script type="text/javascript">
-    MathJax = {
-        tex: {
-            inlineMath: [['$', '$'], ['\\(', '\\)']],
-            displayMath: [['$$', '$$'], ['\[', '\]']],
-            processEscapes: true
-        },
-        svg: {
-            fontCache: 'global'
-        }
-    };
+    if (window.isMobiLocalMode && window.isMobiLocalMode()) {
+        MathJax = {
+            typeset: function () { return Promise.resolve(); },
+            typesetPromise: function () { return Promise.resolve(); }
+        };
+    } else {
+        MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\[', '\]']],
+                processEscapes: true
+            },
+            svg: {
+                fontCache: 'global'
+            }
+        };
+        document.write('<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"><\/script>');
+    }
 </script>
-
-<script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
-<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 
 <script type="text/javascript">
     var firstAcess = true;
